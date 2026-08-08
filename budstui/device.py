@@ -108,6 +108,18 @@ class BudsState:
         return Placement.WEARING in (self.placement_left, self.placement_right)
 
 
+def _run_timed(*args: str, timeout: float) -> str:
+    if shutil.which(args[0]) is None:
+        return ""
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return "timed out"
+    except OSError as exc:
+        return f"error: {exc}"
+    return result.stdout + result.stderr
+
+
 def _run(*args: str) -> str:
     if shutil.which(args[0]) is None:
         return ""
@@ -118,18 +130,63 @@ def _run(*args: str) -> str:
     return result.stdout
 
 
-def list_connected_buds() -> list[tuple[str, str]]:
-    """Return ``(address, name)`` for every connected device that speaks the buds protocol."""
-    found = []
-    for line in _run("bluetoothctl", "devices", "Connected").splitlines():
+@dataclass(frozen=True)
+class KnownDevice:
+    address: str
+    name: str
+    connected: bool
+
+
+def _looks_like_buds(name: str, info: str) -> bool:
+    return UUID_SPP_NEW in info or (UUID_SPP_LEGACY in info and "buds" in name.lower())
+
+
+def list_buds() -> list[KnownDevice]:
+    """Every paired device that speaks the buds protocol, connected ones first."""
+    found: list[KnownDevice] = []
+    for line in _run("bluetoothctl", "devices", "Paired").splitlines():
         match = _DEVICE_RE.match(line.strip())
         if not match:
             continue
         address, name = match.group(1).upper(), match.group(2).strip()
-        info = _run("bluetoothctl", "info", address).lower()
-        if UUID_SPP_NEW in info or (UUID_SPP_LEGACY in info and "buds" in name.lower()):
-            found.append((address, name))
+        info = _run("bluetoothctl", "info", address)
+        if not _looks_like_buds(name, info.lower()):
+            continue
+        found.append(KnownDevice(address, name, "connected: yes" in info.lower()))
+    found.sort(key=lambda d: not d.connected)
     return found
+
+
+def list_connected_buds() -> list[tuple[str, str]]:
+    """``(address, name)`` for every *connected* pair of buds."""
+    return [(d.address, d.name) for d in list_buds() if d.connected]
+
+
+def is_connected(address: str) -> bool:
+    return "connected: yes" in _run("bluetoothctl", "info", address).lower()
+
+
+def bluetooth_connect(address: str, timeout: float = 25.0) -> tuple[bool, str]:
+    """Bring up the Bluetooth link, as ``bluetoothctl connect`` would."""
+    output = _run_timed("bluetoothctl", "connect", address, timeout=timeout)
+    if "successful" in output.lower() or is_connected(address):
+        return True, ""
+    return False, _first_error(output) or "connection failed"
+
+
+def bluetooth_disconnect(address: str, timeout: float = 15.0) -> tuple[bool, str]:
+    """Drop the Bluetooth link entirely, releasing audio as well as control."""
+    output = _run_timed("bluetoothctl", "disconnect", address, timeout=timeout)
+    if "successful" in output.lower() or not is_connected(address):
+        return True, ""
+    return False, _first_error(output) or "disconnect failed"
+
+
+def _first_error(output: str) -> str:
+    for line in output.splitlines():
+        if "failed" in line.lower() or "error" in line.lower():
+            return line.strip()
+    return ""
 
 
 class ConnectionError_(RuntimeError):

@@ -64,6 +64,16 @@ class NoiseControlMode(enum.IntEnum):
             NoiseControlMode.ADAPTIVE: "adaptive",
         }[self]
 
+    @property
+    def short_label(self) -> str:
+        """A label for narrow terminals."""
+        return {
+            NoiseControlMode.OFF: "off",
+            NoiseControlMode.ANC: "anc",
+            NoiseControlMode.AMBIENT: "ambient",
+            NoiseControlMode.ADAPTIVE: "adaptive",
+        }[self]
+
 
 class Placement(enum.IntEnum):
     """Per-earbud placement, as reported in the status payload."""

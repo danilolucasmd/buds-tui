@@ -3,41 +3,36 @@
 A terminal UI for managing Samsung Galaxy Buds on Linux. Built and verified against the **Galaxy Buds4 Pro**, with support for other models in the same protocol family.
 
 ```
-╭─ danilo's buds4 pro ───────────────────────────────╮
-│                                                    │
-│  ▌BATTERY                                          │
-│    left+right [ ] ███████████████░░░░░░░  66%      │
-│    case       [ ] █████████░░░░░░░░░░░░░  43%      │
-│                                                    │
-│  ──────────────────────────────────────────────    │
-│                                                    │
-│  ▌SOUND MODE                                       │
-│    [ ] off                                         │
-│  ▸ [*] ambient sound  ←                            │
-│    [ ] adaptive                                    │
-│    [ ] active noise canceling                      │
-│                                                    │
-│  ──────────────────────────────────────────────    │
-│                                                    │
-│  ▌AMBIENT SOUND LEVEL                              │
-│    - [───────────────────●] +  lvl 5/5             │
-│                                                    │
-│  ──────────────────────────────────────────────    │
-│                                                    │
-│  ▌VOLUME                                           │
-│    - [──────●─────────────] +   30%                │
-│                                                    │
-╰────────────────────────────────────────────────────╯
-  j/k move   h/l adjust   enter select   tab cycle
-  m mute     r reconnect  q quit
+  ▸ Danilo's Buds4 Pro  ● connected                enter: disconnect
+  ╭─ battery ──────────────────────────────────────────────────────╮
+  │   left    █████████████████████████████░░░░░░░░░░░░░░░░░░  62% │
+  │   right   ██████████████████████████████░░░░░░░░░░░░░░░░░  63% │
+  │   case    ████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░  43% │
+  ╰────────────────────────────────────────────────────────────────╯
+  ╭─ sound mode ───────────────────────────────────────────────────╮
+  │   off                                                          │
+  │ ▸ ambient sound                                       (active) │
+  │   adaptive                                                     │
+  │   active noise canceling                                       │
+  ╰────────────────────────────────────────────────────────────────╯
+  ╭─ ambient sound level ──────────────────────────────────────────╮
+  │   - [──────────────────────────────────────────●] +    lvl 5/5 │
+  ╰────────────────────────────────────────────────────────────────╯
+  ╭─ volume ───────────────────────────────────────────────────────╮
+  │   - [─────────────●─────────────────────────────] +        30% │
+  ╰────────────────────────────────────────────────────────────────╯
+  j/k navigate   enter select   h/l adjust   q quit
 ```
 
 ## What it does
 
-- **Battery** for the earbuds and the case, with a charging indicator.
+- **Connect / disconnect** on the top line, focused the moment the app opens, so `enter` toggles the link. This drops the Bluetooth connection itself, not just the control session, so audio is released too.
+- **Battery** for each earbud and the case, with a charging indicator.
 - **Sound mode**: off, ambient sound, adaptive, active noise canceling.
-- **Level slider** that appears only for the modes that have one — ambient sound volume, or ANC strength. It retitles itself to match the mode.
+- **Level slider** that appears only for the modes that have one — ambient sound volume, or ANC strength — and retitles itself to match.
 - **Overall volume**, which is the PipeWire/PulseAudio sink for the earbuds (this is what AVRCP mirrors onto the device).
+
+The layout is responsive. Bars and slider tracks grow with the terminal, labels shorten, and below roughly 30 columns the bars drop out entirely rather than wrap — down to about 20 columns everything stays readable.
 
 ## Requirements
 
@@ -60,14 +55,17 @@ Without `--address` it connects to the first connected device that advertises th
 | --- | --- |
 | `j` / `k`, `↓` / `↑` | move the cursor |
 | `h` / `l`, `←` / `→` | adjust the slider under the cursor |
-| `enter` / `space` | select the sound mode under the cursor |
-| `tab` | cycle through sound modes |
+| `enter` / `space` | connect/disconnect, or pick the sound mode under the cursor |
+| `tab` / `shift+tab` | jump to the next / previous section |
+| `1`–`4` | pick a sound mode directly |
 | `m` | mute / unmute |
-| `r` | reconnect |
+| `r` | reconnect the control session |
 | `g` / `G` | first / last row |
 | `q` | quit |
 
-Moving the cursor never changes what you are listening to: picking a mode is always an explicit `enter` or `tab`.
+Moving the cursor never changes what you are listening to: picking a mode is always an explicit `enter` or number key.
+
+On startup the app attaches to earbuds that are already connected, but it will not bring the link up on its own — that is what the connection row is for.
 
 ## Supported models
 

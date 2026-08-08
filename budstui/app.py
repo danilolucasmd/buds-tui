@@ -3,13 +3,23 @@
 from __future__ import annotations
 
 import asyncio
+
+from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container
+from textual.containers import VerticalScroll
 from textual.widgets import Static
 
 from . import ui, volume as volume_ctl
-from .device import BudsConnection, BudsState, list_connected_buds, profile_for
+from .device import (
+    BudsConnection,
+    BudsState,
+    KnownDevice,
+    bluetooth_connect,
+    bluetooth_disconnect,
+    list_buds,
+    profile_for,
+)
 from .protocol import MsgId, NoiseControlMode
 
 VOLUME_STEP = 5
@@ -21,21 +31,16 @@ class BudsApp(App):
         background: #04120a;
         align: center middle;
     }
-    #panel {
-        width: 54;
+    #wrap {
+        width: 100%;
+        max-width: 74;
         height: auto;
+        max-height: 100%;
         padding: 1 2;
-        border: round #4ade80;
-        border-title-color: #4ade80;
-        border-title-style: bold;
         background: #04120a;
-        color: #7dd3a0;
     }
-    #hint {
-        width: 54;
-        padding: 0 2;
-        color: #2f6b47;
-    }
+    #header { margin-bottom: 1; }
+    #status { color: #fbbf24; margin-bottom: 1; }
     """
 
     BINDINGS = [
@@ -44,7 +49,12 @@ class BudsApp(App):
         Binding("l,right", "adjust(1)", "increase", show=False),
         Binding("h,left", "adjust(-1)", "decrease", show=False),
         Binding("enter,space", "select", "select", show=False),
-        Binding("tab", "cycle_mode", "cycle mode", show=False, priority=True),
+        Binding("tab", "group(1)", "next section", show=False, priority=True),
+        Binding("shift+tab", "group(-1)", "previous section", show=False, priority=True),
+        Binding("1", "pick(0)", "mode 1", show=False),
+        Binding("2", "pick(1)", "mode 2", show=False),
+        Binding("3", "pick(2)", "mode 3", show=False),
+        Binding("4", "pick(3)", "mode 4", show=False),
         Binding("m", "toggle_mute", "mute", show=False),
         Binding("r", "reconnect", "reconnect", show=False),
         Binding("g", "cursor_home", "first", show=False),
@@ -54,90 +64,176 @@ class BudsApp(App):
 
     def __init__(self, address: str | None = None) -> None:
         super().__init__()
-        self._address = address
+        self._wanted_address = address
         self.connection: BudsConnection | None = None
+        self.device: KnownDevice | None = None
         self._offline = BudsState(profile=profile_for(""))
         self.rows: list[ui.Row] = []
         self.cursor = 0
         self.sink: str | None = None
         self.volume: int | None = None
         self.muted = False
-        self.status = "searching for earbuds..."
+        self.busy = False
+        self.status = ""
 
     @property
     def state(self) -> BudsState:
-        """The connection owns the state; fall back to an empty one when offline."""
+        """The connection owns the state; fall back to an offline one when closed."""
         return self.connection.state if self.connection is not None else self._offline
 
     # -- layout ------------------------------------------------------------
 
     def compose(self) -> ComposeResult:
-        panel = Static(id="panel")
-        panel.border_title = "galaxy buds"
-        yield Container(panel, Static(_HINT, id="hint"), id="wrap")
+        with VerticalScroll(id="wrap"):
+            yield ui_panel(self._header_lines, id="header")
+            yield Static("", id="status")
+            yield group_box("battery", self._battery_lines, id="battery")
+            yield group_box("sound mode", self._mode_lines, id="mode")
+            yield group_box("level", self._level_lines, id="level")
+            yield group_box("volume", self._volume_lines, id="volume")
+            yield ui_panel(self._hint_lines, id="hint")
 
     async def on_mount(self) -> None:
-        self.rows = ui.build_rows(self.state)
+        self.rows = ui.build_rows(self.state, has_sink=False)
         self._render()
         self.set_interval(2.0, self._poll_volume)
-        self.run_worker(self._connect(), exclusive=True)
+        self.run_worker(self._startup(), exclusive=True)
+
+    # -- builders ----------------------------------------------------------
+
+    def _row_index(self, kind: str) -> int | None:
+        return next((i for i, r in enumerate(self.rows) if r.kind == kind), None)
+
+    def _is_active(self, kind: str) -> bool:
+        return self._row_index(kind) == self.cursor
+
+    def _header_lines(self, width: int) -> list[Text]:
+        return ui.header_lines(
+            self.state,
+            active=self._is_active(ui.ROW_CONNECTION),
+            connecting=self.busy,
+            width=width,
+        )
+
+    def _battery_lines(self, width: int) -> list[Text]:
+        return ui.battery_lines(self.state, width)
+
+    def _mode_lines(self, width: int) -> list[Text]:
+        return ui.mode_lines(self.state, self.rows, self.cursor, width)
+
+    def _level_lines(self, width: int) -> list[Text]:
+        return ui.level_lines(self.state, active=self._is_active(ui.ROW_LEVEL), width=width)
+
+    def _volume_lines(self, width: int) -> list[Text]:
+        return ui.volume_lines(
+            self.volume, self.muted, active=self._is_active(ui.ROW_VOLUME), width=width
+        )
+
+    def _hint_lines(self, width: int) -> list[Text]:
+        return [ui.hint_line(width)]
 
     # -- connection --------------------------------------------------------
 
-    async def _connect(self) -> None:
-        self.status = "searching for earbuds..."
-        self._render()
+    async def _startup(self) -> None:
+        await self._discover()
+        # Only attach to earbuds that are already connected; bringing the link
+        # up is the user's call, on the connection row.
+        if self.device is not None and self.device.connected:
+            await self._open_session()
+        self._sync_rows()
 
-        devices = await asyncio.to_thread(list_connected_buds)
-        if self._address:
-            devices = [d for d in devices if d[0].upper() == self._address.upper()] or [
-                (self._address.upper(), "")
-            ]
+    async def _discover(self) -> None:
+        devices = await asyncio.to_thread(list_buds)
+        if self._wanted_address:
+            wanted = self._wanted_address.upper()
+            devices = [d for d in devices if d.address.upper() == wanted]
+            if not devices:
+                devices = [KnownDevice(wanted, wanted, False)]
         if not devices:
-            self.status = "no connected Galaxy Buds found - pair and connect them first, then press r"
+            self.status = "no paired Galaxy Buds found - pair them first, then press r"
             self._render()
             return
+        self.device = devices[0]
+        self._offline = BudsState(
+            address=self.device.address,
+            name=self.device.name,
+            profile=profile_for(self.device.name),
+        )
+        self.status = ""
 
-        address, name = devices[0]
-        self.status = f"connecting to {name or address}..."
-        self._render()
-
-        connection = BudsConnection(address, name)
+    async def _open_session(self) -> bool:
+        """Open the RFCOMM control session to already-connected earbuds."""
+        assert self.device is not None
+        connection = BudsConnection(self.device.address, self.device.name)
         connection.on_update.append(self._on_device_update)
         try:
             await connection.connect()
-        except Exception as exc:  # surfacing the reason beats a blank panel
-            self.status = f"could not connect: {exc}  (press r to retry)"
+        except Exception as exc:
+            self.status = f"could not open control session: {exc}"
             self._render()
-            return
-
+            return False
         self.connection = connection
-        self.sink = await asyncio.to_thread(volume_ctl.sink_name, address)
+        self.sink = await asyncio.to_thread(volume_ctl.sink_name, self.device.address)
         self.status = ""
-        self._sync_rows()
         await self._poll_volume()
+        return True
 
-    def _on_device_update(self, state: BudsState) -> None:
-        if not state.connected and self.connection is not None:
-            self.status = "earbuds disconnected  (press r to reconnect)"
-        self._sync_rows()
-
-    async def action_reconnect(self) -> None:
+    async def _close_session(self) -> None:
         if self.connection is not None:
             await self.connection.close()
             self.connection = None
-        self.run_worker(self._connect(), exclusive=True)
+
+    async def _toggle_connection(self) -> None:
+        if self.busy or self.device is None:
+            return
+        self.busy = True
+        self.status = ""
+        self._render()
+        try:
+            if self.state.connected:
+                await self._close_session()
+                ok, error = await asyncio.to_thread(bluetooth_disconnect, self.device.address)
+                self.status = "" if ok else f"disconnect failed: {error}"
+                self.sink = None
+                self.volume = None
+                self.device = KnownDevice(self.device.address, self.device.name, False)
+            else:
+                ok, error = await asyncio.to_thread(bluetooth_connect, self.device.address)
+                if not ok:
+                    self.status = f"connect failed: {error}"
+                else:
+                    self.device = KnownDevice(self.device.address, self.device.name, True)
+                    # Give BlueZ a moment to publish the service records.
+                    await asyncio.sleep(1.0)
+                    await self._open_session()
+        finally:
+            self.busy = False
+            self._sync_rows()
+
+    def _on_device_update(self, state: BudsState) -> None:
+        if not state.connected and self.connection is not None:
+            self.status = "earbuds disconnected"
+            self._offline = BudsState(
+                address=state.address, name=state.name, profile=state.profile
+            )
+            self.connection = None
+        self._sync_rows()
+
+    async def action_reconnect(self) -> None:
+        await self._close_session()
+        self.status = ""
+        self.run_worker(self._startup(), exclusive=True)
 
     # -- volume ------------------------------------------------------------
 
     async def _poll_volume(self) -> None:
         if not self.sink:
             return
+        sink = self.sink
         volume, muted = await asyncio.to_thread(
-            lambda: (volume_ctl.get_volume(self.sink), volume_ctl.get_mute(self.sink))
+            lambda: (volume_ctl.get_volume(sink), volume_ctl.get_mute(sink))
         )
         if volume is None:
-            # The sink disappears when audio routing changes; look it up again.
             self.sink = await asyncio.to_thread(volume_ctl.sink_name, self.state.address)
             return
         if (volume, muted) != (self.volume, self.muted):
@@ -147,10 +243,9 @@ class BudsApp(App):
     async def _set_volume(self, percent: int) -> None:
         if not self.sink:
             return
-        percent = max(0, min(100, percent))
-        self.volume = percent
+        self.volume = max(0, min(100, percent))
         self._render()
-        await asyncio.to_thread(volume_ctl.set_volume, self.sink, percent)
+        await asyncio.to_thread(volume_ctl.set_volume, self.sink, self.volume)
 
     async def action_toggle_mute(self) -> None:
         if not self.sink:
@@ -164,16 +259,16 @@ class BudsApp(App):
     def _sync_rows(self) -> None:
         """Rebuild rows after a state change, keeping the cursor on its row."""
         previous = self._current()
-        self.rows = ui.build_rows(self.state)
-        if previous is not None:
-            for index, row in enumerate(self.rows):
-                if row == previous:
-                    self.cursor = index
-                    break
-            else:
-                self.cursor = min(self.cursor, len(self.rows) - 1)
+        self.rows = ui.build_rows(self.state, has_sink=bool(self.sink))
+        if previous is not None and previous in self.rows:
+            self.cursor = self.rows.index(previous)
         self.cursor = max(0, min(self.cursor, len(self.rows) - 1))
         self._render()
+
+    def _current(self) -> ui.Row | None:
+        if 0 <= self.cursor < len(self.rows):
+            return self.rows[self.cursor]
+        return None
 
     def action_cursor(self, delta: int) -> None:
         if self.rows:
@@ -188,17 +283,34 @@ class BudsApp(App):
         self.cursor = max(0, len(self.rows) - 1)
         self._render()
 
-    # -- actions -----------------------------------------------------------
+    def action_group(self, delta: int) -> None:
+        """Jump to the first row of the next (or previous) section."""
+        current = self._current()
+        if current is None:
+            return
+        groups: list[str] = []
+        for row in self.rows:
+            if row.group not in groups:
+                groups.append(row.group)
+        target = groups[(groups.index(current.group) + delta) % len(groups)]
+        self.cursor = next(i for i, r in enumerate(self.rows) if r.group == target)
+        self._render()
 
-    def _current(self) -> ui.Row | None:
-        if 0 <= self.cursor < len(self.rows):
-            return self.rows[self.cursor]
-        return None
+    # -- actions -----------------------------------------------------------
 
     async def action_select(self) -> None:
         row = self._current()
-        if row is not None and row.kind == ui.ROW_MODE and row.mode is not None:
+        if row is None:
+            return
+        if row.kind == ui.ROW_CONNECTION:
+            await self._toggle_connection()
+        elif row.kind == ui.ROW_MODE and row.mode is not None:
             await self._set_mode(row.mode)
+
+    async def action_pick(self, index: int) -> None:
+        modes = self.state.profile.modes
+        if self.connection is not None and 0 <= index < len(modes):
+            await self._set_mode(modes[index])
 
     async def action_adjust(self, delta: int) -> None:
         row = self._current()
@@ -208,13 +320,8 @@ class BudsApp(App):
             await self._set_volume((self.volume or 0) + delta * VOLUME_STEP)
         elif row.kind == ui.ROW_LEVEL:
             await self._set_level(ui.level_value(self.state) + delta)
-        # Mode rows have nothing to adjust: picking one is an explicit enter/tab,
-        # so that moving the cursor can never change what you are listening to.
-
-    async def action_cycle_mode(self) -> None:
-        modes = self.state.profile.modes
-        index = modes.index(self.state.noise_mode) if self.state.noise_mode in modes else 0
-        await self._set_mode(modes[(index + 1) % len(modes)])
+        # Connection and mode rows have nothing to adjust: acting on them is an
+        # explicit enter, so that moving the cursor can never change anything.
 
     async def _set_mode(self, mode: NoiseControlMode) -> None:
         if self.connection is None:
@@ -222,10 +329,11 @@ class BudsApp(App):
         # Update straight away so the UI is responsive; the ack confirms it.
         self.connection.update_state(noise_mode=mode)
         self._sync_rows()
-        for index, row in enumerate(self.rows):
-            if row.kind == ui.ROW_MODE and row.mode == mode:
-                self.cursor = index
-                break
+        index = next(
+            (i for i, r in enumerate(self.rows) if r.kind == ui.ROW_MODE and r.mode == mode), None
+        )
+        if index is not None:
+            self.cursor = index
         self._render()
         try:
             await self.connection.set_noise_mode(mode)
@@ -259,30 +367,49 @@ class BudsApp(App):
     # -- rendering ---------------------------------------------------------
 
     def _render(self) -> None:
+        if not self.is_mounted:
+            return
         try:
-            panel = self.query_one("#panel", Static)
+            level_box = self.query_one("#level")
+            status_box = self.query_one("#status", Static)
         except Exception:
             return
-        title = self.state.name or "galaxy buds"
-        panel.border_title = title.lower()
-        panel.update(
-            ui.render_panel(
-                self.state,
-                volume=self.volume,
-                muted=self.muted,
-                rows=self.rows,
-                cursor=self.cursor,
-                status=self.status,
-            )
-        )
+
+        connected = self.state.connected
+        self.query_one("#battery").display = connected
+        self.query_one("#mode").display = connected
+        level_box.display = self._row_index(ui.ROW_LEVEL) is not None
+        level_box.border_title = ui.level_title(self.state)
+        self.query_one("#volume").display = self._row_index(ui.ROW_VOLUME) is not None
+
+        status_box.display = bool(self.status)
+        status_box.update(Text(self.status, style=ui.STYLES["warn"]))
+
+        current = self._current()
+        group = current.group if current is not None else ""
+        for widget_id, name in (
+            ("#battery", ui.GROUP_BATTERY),
+            ("#mode", ui.GROUP_MODE),
+            ("#level", ui.GROUP_LEVEL),
+            ("#volume", ui.GROUP_VOLUME),
+        ):
+            self.query_one(widget_id).set_active(group == name)
+
+        for widget_id in ("#header", "#battery", "#mode", "#level", "#volume", "#hint"):
+            self.query_one(widget_id).refresh(layout=True)
 
     async def action_quit(self) -> None:
-        if self.connection is not None:
-            await self.connection.close()
+        await self._close_session()
         self.exit()
 
 
-_HINT = (
-    "j/k move   h/l adjust   enter select   tab cycle\n"
-    "m mute     r reconnect  q quit"
-)
+def ui_panel(builder, **kwargs):
+    from .widgets import Panel
+
+    return Panel(builder, **kwargs)
+
+
+def group_box(title, builder, **kwargs):
+    from .widgets import GroupBox
+
+    return GroupBox(title, builder, **kwargs)
