@@ -1,0 +1,28 @@
+[project]
+name = "buds-tui"
+version = "0.1.0"
+description = "Terminal UI for Samsung Galaxy Buds (Buds4 Pro and friends)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "textual>=1.0",
+]
+
+[project.scripts]
+buds-tui = "budstui.__main__:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["budstui"]
+
+[tool.uv]
+# The earbuds are reached over an AF_BLUETOOTH socket, which the standalone
+# python-build-standalone interpreters uv downloads are not compiled with.
+# Distro interpreters are, so only use those.
+python-preference = "only-system"
