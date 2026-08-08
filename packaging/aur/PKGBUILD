@@ -1,0 +1,33 @@
+# Maintainer: Danilo de Lucas <danilolucasmd@gmail.com>
+
+pkgname=buds-tui
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Terminal UI for managing Samsung Galaxy Buds"
+arch=('any')
+url="https://github.com/danilolucasmd/buds-tui"
+license=('MIT')
+# bluez provides bluetoothd, bluez-utils provides bluetoothctl, libpulse provides pactl.
+depends=('python' 'python-textual' 'bluez' 'bluez-utils' 'libpulse')
+makedepends=('python-build' 'python-installer' 'python-wheel' 'python-hatchling')
+checkdepends=('python-pytest')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "$pkgname-$pkgver"
+  python -m build --wheel --no-isolation
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  # The test suite runs against captured protocol frames, so it needs no earbuds.
+  python -m pytest tests -q
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  python -m installer --destdir="$pkgdir" dist/*.whl
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}

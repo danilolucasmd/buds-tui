@@ -9,7 +9,7 @@ from .app import BudsApp
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="buds-tui", description="Terminal UI for Samsung Galaxy Buds."
+        prog="buds", description="Terminal UI for managing Samsung Galaxy Buds."
     )
     parser.add_argument(
         "-a",

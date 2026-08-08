@@ -1,15 +1,32 @@
 [project]
 name = "buds-tui"
 version = "0.1.0"
-description = "Terminal UI for Samsung Galaxy Buds (Buds4 Pro and friends)"
+description = "Terminal UI for managing Samsung Galaxy Buds"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Danilo de Lucas", email = "danilolucasmd@gmail.com" }]
+keywords = ["bluetooth", "galaxy-buds", "samsung", "earbuds", "tui", "terminal"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Utilities",
+]
 dependencies = [
     "textual>=1.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/danilolucasmd/buds-tui"
+Repository = "https://github.com/danilolucasmd/buds-tui"
+Issues = "https://github.com/danilolucasmd/buds-tui/issues"
+
 [project.scripts]
-buds-tui = "budstui.__main__:main"
+buds = "budstui.__main__:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]
@@ -20,6 +37,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["budstui"]
+
+[tool.hatch.build.targets.sdist]
+include = ["budstui", "tests", "packaging", "README.md", "LICENSE"]
 
 [tool.uv]
 # The earbuds are reached over an AF_BLUETOOTH socket, which the standalone

@@ -47,18 +47,35 @@ The layout is responsive. Bars and slider tracks grow with the terminal, labels 
 
 ## Requirements
 
-- Linux with BlueZ, and the earbuds already paired and connected.
+- Linux with BlueZ, and the earbuds already paired.
 - PipeWire or PulseAudio with `pactl` for the volume slider.
-- A Python built with Bluetooth socket support. Distribution interpreters have it; the standalone builds `uv` downloads by default do **not**, which is why `pyproject.toml` pins `python-preference = "only-system"`.
+- A Python built with Bluetooth socket support. Every distribution interpreter has it, so packaged installs are fine. The standalone interpreters `uv` downloads by default do **not**, which is why `pyproject.toml` pins `python-preference = "only-system"` for development.
+
+## Installing
+
+Arch Linux and derivatives, from the AUR:
+
+```sh
+yay -S buds-tui
+```
+
+The package is `buds-tui`; the command it installs is `buds`.
+
+From a checkout, without installing:
+
+```sh
+uv run buds
+```
 
 ## Running
 
 ```sh
-uv run buds-tui              # or: uv run python -m budstui
-uv run buds-tui -a AA:BB:CC:DD:EE:FF   # pick a specific pair
+buds                              # the first connected pair
+buds -a AA:BB:CC:DD:EE:FF         # pick a specific pair
+python -m budstui                 # equivalent, without the console script
 ```
 
-Without `--address` it connects to the first connected device that advertises the Galaxy Buds service.
+Without `--address` it uses the first paired device that advertises the Galaxy Buds service, preferring one that is already connected.
 
 ## Keys
 
