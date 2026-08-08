@@ -1,10 +1,12 @@
 """The settings exposed in the settings group.
 
 Each entry knows the message that writes it and, where the earbuds report it,
-the offset in the extended-status payload that reads it back. Offsets marked
-UNVERIFIED come from the reference implementation rather than from a sweep
-against real hardware; the reference explicitly does not implement Buds4 Pro,
-so those are hypotheses until confirmed.
+the offset in the extended-status payload that reads it back.
+
+Every offset here was confirmed against a Buds4 Pro by writing both values and
+diffing the resulting status payloads, rather than taken from the reference
+implementation (which does not implement Buds4 Pro). Settings the earbuds
+ignore entirely are listed in :data:`UNSUPPORTED` instead.
 """
 
 from __future__ import annotations
@@ -93,47 +95,51 @@ class Setting:
 SETTINGS: list[Setting] = [
     Setting(
         "conversation_detect", "conversation detect", msg=122,
-        kind=TOGGLE, offset=26,
+        kind=TOGGLE, offset=26, verified=True,
     ),
     Setting(
-        "conversation_timeout", "conversation timeout", msg=123, kind=CHOICE, offset=27,
+        "conversation_timeout", "conversation timeout", msg=123, kind=CHOICE,
+        # Acknowledged, but the earbuds never report it back, so it is tracked
+        # from the acknowledgement alone.
+        offset=None,
         choices=(("5 sec", 0), ("10 sec", 1), ("15 sec", 2)),
-        depends_on="conversation_detect",
+        depends_on="conversation_detect", verified=True,
     ),
     Setting(
         "one_earbud_nc", "noise control with one earbud", msg=111,
-        kind=TOGGLE, offset=28,
-    ),
-    Setting(
-        "outside_double_tap", "double-tap edge for volume", msg=149,
-        kind=TOGGLE, offset=32,
+        kind=TOGGLE, offset=28, verified=True,
     ),
     Setting(
         "sidetone", "sidetone on calls", msg=139, kind=TOGGLE, offset=33,
+        verified=True,
     ),
     Setting(
         "seamless_connection", "seamless connection", msg=175,
-        kind=TOGGLE, offset=19, invert=True,
+        kind=TOGGLE, offset=19, invert=True, verified=True,
     ),
     Setting(
-        "gaming_mode", "gaming mode", msg=135, kind=TOGGLE, offset=None,
-    ),
-    Setting(
-        "call_path", "route calls to phone", msg=110,
-        kind=TOGGLE, offset=34, invert=True,
-    ),
-    Setting(
-        "adaptive_volume", "adaptive volume", msg=197, kind=TOGGLE, offset=49,
+        "call_path", "call path control", msg=110,
+        kind=TOGGLE, offset=34, invert=True, verified=True,
     ),
     Setting(
         "auto_pause", "pause when a bud is removed", msg=108,
-        kind=TOGGLE, offset=45,
+        kind=TOGGLE, offset=46, verified=True,
     ),
     Setting(
         "stereo_balance", "stereo balance", msg=143, kind=SLIDER, offset=25,
-        minimum=0, maximum=BALANCE_MAX,
+        minimum=0, maximum=BALANCE_MAX, verified=True,
     ),
 ]
+
+#: Messages the Buds4 Pro ignores: writing either value produced no
+#: acknowledgement and no change anywhere in the status payload, while every
+#: shipped setting above acknowledged immediately. Kept here so the finding is
+#: not rediscovered, and so another model can promote them into SETTINGS.
+UNSUPPORTED = {
+    "gaming mode": 135,
+    "double-tap edge for volume": 149,
+    "adaptive volume": 197,
+}
 
 BY_KEY = {s.key: s for s in SETTINGS}
 BY_MSG = {s.msg: s for s in SETTINGS}

@@ -3,7 +3,7 @@
 A terminal UI for managing Samsung Galaxy Buds on Linux. Built and verified against the **Galaxy Buds4 Pro**, with support for other models in the same protocol family.
 
 ```
-  ▸ Danilo's Buds4 Pro  ● connected                enter: disconnect
+    Danilo's Buds4 Pro  ● connected                       L:in  R:in
   ╭─ battery ──────────────────────────────────────────────────────╮
   │   left    █████████████████████████████░░░░░░░░░░░░░░░░░░  62% │
   │   right   ██████████████████████████████░░░░░░░░░░░░░░░░░  63% │
@@ -21,6 +21,16 @@ A terminal UI for managing Samsung Galaxy Buds on Linux. Built and verified agai
   ╭─ volume ───────────────────────────────────────────────────────╮
   │   - [─────────────●─────────────────────────────] +        30% │
   ╰────────────────────────────────────────────────────────────────╯
+  ╭─ settings ─────────────────────────────────────────────────────╮
+  │   conversation detect                                       on │
+  │   conversation timeout                                  10 sec │
+  │   noise control with one earbud                            off │
+  │   sidetone on calls                                        off │
+  │   seamless connection                                       on │
+  │   call path control                                         on │
+  │   pause when a bud is removed                               on │
+  │   stereo balance                             [────●───] center │
+  ╰────────────────────────────────────────────────────────────────╯
   j/k navigate   enter select   h/l adjust   q quit
 ```
 
@@ -31,6 +41,7 @@ A terminal UI for managing Samsung Galaxy Buds on Linux. Built and verified agai
 - **Sound mode**: off, ambient sound, adaptive, active noise canceling.
 - **Level slider** that appears only for the modes that have one — ambient sound volume, or ANC strength — and retitles itself to match.
 - **Overall volume**, which is the PipeWire/PulseAudio sink for the earbuds (this is what AVRCP mirrors onto the device).
+- **Settings**: conversation detect (and its timeout), noise control with one earbud, sidetone, seamless connection, call path control, pause when a bud is removed, and stereo balance.
 
 The layout is responsive. Bars and slider tracks grow with the terminal, labels shorten, and below roughly 30 columns the bars drop out entirely rather than wrap — down to about 20 columns everything stays readable.
 
@@ -55,7 +66,7 @@ Without `--address` it connects to the first connected device that advertises th
 | --- | --- |
 | `j` / `k`, `↓` / `↑` | move the cursor |
 | `h` / `l`, `←` / `→` | adjust the slider under the cursor |
-| `enter` / `space` | connect/disconnect, or pick the sound mode under the cursor |
+| `enter` / `space` | connect/disconnect, pick the sound mode, or flip the setting under the cursor |
 | `tab` / `shift+tab` | jump to the next / previous section |
 | `1`–`4` | pick a sound mode directly |
 | `m` | mute / unmute |
@@ -66,6 +77,18 @@ Without `--address` it connects to the first connected device that advertises th
 Moving the cursor never changes what you are listening to: picking a mode is always an explicit `enter` or number key.
 
 On startup the app attaches to earbuds that are already connected, but it will not bring the link up on its own — that is what the connection row is for.
+
+## Settings
+
+Settings live in their own group at the bottom. Toggles flip with `enter` or `h`/`l`; the timeout is a choice list; stereo balance is a slider, so it takes `h`/`l` only. `conversation timeout` appears only while `conversation detect` is on.
+
+Every setting here was confirmed against real hardware: each was written with both values and the resulting status payloads diffed, which pins down both that the write lands and which payload offset reads it back. The earbuds acknowledge each write with the value they actually applied, so the display also self-corrects as you use it.
+
+`conversation timeout` is write-only — the earbuds acknowledge it but never report it in the status payload, so it is tracked from the acknowledgement alone and reads `--` until you set it.
+
+Three settings that the reference implementation exposes are deliberately **not** shipped: gaming mode (135), double-tap edge for volume (149) and adaptive volume (197). On Buds4 Pro firmware, writing either value to any of them produces no acknowledgement and changes nothing in the status payload, while all eight shipped settings acknowledge immediately. They are recorded in `UNSUPPORTED` in `budstui/settings.py` so another model can promote them.
+
+Adding another setting is one entry in `SETTINGS` in `budstui/settings.py`: a label, the message id, the kind, and the payload offset it reads back from.
 
 ## Supported models
 

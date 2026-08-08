@@ -36,8 +36,18 @@ def test_reads_real_payload():
 
 
 def test_write_only_settings_are_absent_until_acknowledged():
-    assert "gaming_mode" not in read_all(PAYLOAD)
-    assert BY_KEY["gaming_mode"].read(PAYLOAD) is None
+    assert "conversation_timeout" not in read_all(PAYLOAD)
+    assert BY_KEY["conversation_timeout"].read(PAYLOAD) is None
+
+
+def test_every_shipped_setting_was_verified_against_hardware():
+    assert all(s.verified for s in SETTINGS)
+
+
+def test_ignored_messages_are_not_shipped_as_settings():
+    from budstui.settings import UNSUPPORTED
+
+    assert not {s.msg for s in SETTINGS} & set(UNSUPPORTED.values())
 
 
 def test_inverted_settings_round_trip():
