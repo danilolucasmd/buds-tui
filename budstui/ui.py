@@ -13,6 +13,7 @@ from rich.text import Text
 
 from .device import BudsState
 from .protocol import NoiseControlMode
+from .settings import BY_KEY, SLIDER, Setting, visible
 
 # Groups, in the order they appear.
 GROUP_CONNECTION = "connection"
@@ -20,12 +21,14 @@ GROUP_BATTERY = "battery"
 GROUP_MODE = "sound mode"
 GROUP_LEVEL = "level"
 GROUP_VOLUME = "volume"
+GROUP_SETTINGS = "settings"
 
 # Row kinds.
 ROW_CONNECTION = "connection"
 ROW_MODE = "mode"
 ROW_LEVEL = "level"
 ROW_VOLUME = "volume"
+ROW_SETTING = "setting"
 
 MIN_BAR = 6
 MAX_BAR = 64
@@ -61,6 +64,8 @@ class Row:
     kind: str
     group: str
     mode: NoiseControlMode | None = None
+    #: For ROW_SETTING, the ``Setting.key`` this row edits.
+    setting: str | None = None
 
 
 def build_rows(state: BudsState, *, has_sink: bool) -> list[Row]:
@@ -72,6 +77,11 @@ def build_rows(state: BudsState, *, has_sink: bool) -> list[Row]:
             rows.append(Row(ROW_LEVEL, GROUP_LEVEL))
     if has_sink:
         rows.append(Row(ROW_VOLUME, GROUP_VOLUME))
+    if state.connected:
+        rows += [
+            Row(ROW_SETTING, GROUP_SETTINGS, setting=item.key)
+            for item in visible(state.settings)
+        ]
     return rows
 
 
@@ -280,6 +290,40 @@ def volume_lines(volume: int | None, muted: bool, *, active: bool, width: int) -
     if muted:
         line.stylize(STYLES["warn"], line.plain.rindex("muted"))
     return [line]
+
+
+#: Width of the miniature track drawn next to slider-style settings.
+SETTING_TRACK = 8
+
+
+def _setting_value(setting: Setting, value: int | None, width: int) -> Text:
+    readout = setting.display(value)
+    if setting.kind != SLIDER or value is None or width < 34:
+        return Text(readout, style=STYLES["value"])
+    right = Text()
+    right.append("[", style=STYLES["dim"])
+    right.append_text(_track(value - setting.minimum, setting.maximum - setting.minimum, SETTING_TRACK))
+    right.append("] ", style=STYLES["dim"])
+    right.append(readout, style=STYLES["value"])
+    return right
+
+
+def settings_lines(state: BudsState, rows: list[Row], cursor: int, width: int) -> list[Text]:
+    lines = []
+    for index, row in enumerate(rows):
+        if row.kind != ROW_SETTING or row.setting is None:
+            continue
+        setting = BY_KEY.get(row.setting)
+        if setting is None:
+            continue
+        active = index == cursor
+        value = state.settings.get(setting.key)
+        right = _setting_value(setting, value, width)
+        left = _gutter(active)
+        style = STYLES["cursor"] if active else STYLES["label"]
+        left.append(_truncate(setting.label, width - right.cell_len - 3), style=style)
+        lines.append(_split(width, left, right))
+    return lines
 
 
 _HINTS = [

@@ -21,6 +21,7 @@ from .device import (
     profile_for,
 )
 from .protocol import MsgId, NoiseControlMode
+from .settings import BY_KEY, SLIDER
 
 VOLUME_STEP = 5
 
@@ -91,6 +92,7 @@ class BudsApp(App):
             yield group_box("sound mode", self._mode_lines, id="mode")
             yield group_box("level", self._level_lines, id="level")
             yield group_box("volume", self._volume_lines, id="volume")
+            yield group_box("settings", self._settings_lines, id="settings")
             yield ui_panel(self._hint_lines, id="hint")
 
     async def on_mount(self) -> None:
@@ -128,6 +130,9 @@ class BudsApp(App):
         return ui.volume_lines(
             self.volume, self.muted, active=self._is_active(ui.ROW_VOLUME), width=width
         )
+
+    def _settings_lines(self, width: int) -> list[Text]:
+        return ui.settings_lines(self.state, self.rows, self.cursor, width)
 
     def _hint_lines(self, width: int) -> list[Text]:
         return [ui.hint_line(width)]
@@ -306,6 +311,12 @@ class BudsApp(App):
             await self._toggle_connection()
         elif row.kind == ui.ROW_MODE and row.mode is not None:
             await self._set_mode(row.mode)
+        elif row.kind == ui.ROW_SETTING and row.setting is not None:
+            setting = BY_KEY[row.setting]
+            if setting.kind != SLIDER:
+                # Sliders need a direction, so enter leaves them to h/l.
+                value = self.state.settings.get(setting.key, setting.minimum)
+                await self._set_setting(setting.key, setting.adjust(value, 1))
 
     async def action_pick(self, index: int) -> None:
         modes = self.state.profile.modes
@@ -320,6 +331,10 @@ class BudsApp(App):
             await self._set_volume((self.volume or 0) + delta * VOLUME_STEP)
         elif row.kind == ui.ROW_LEVEL:
             await self._set_level(ui.level_value(self.state) + delta)
+        elif row.kind == ui.ROW_SETTING and row.setting is not None:
+            setting = BY_KEY[row.setting]
+            value = self.state.settings.get(setting.key, setting.minimum)
+            await self._set_setting(setting.key, setting.adjust(value, delta))
         # Connection and mode rows have nothing to adjust: acting on them is an
         # explicit enter, so that moving the cursor can never change anything.
 
@@ -364,6 +379,21 @@ class BudsApp(App):
             self.status = f"failed to set level: {exc}"
             self._render()
 
+    async def _set_setting(self, key: str, value: int) -> None:
+        if self.connection is None:
+            return
+        setting = BY_KEY[key]
+        value = setting.clamp(value)
+        # Update straight away so the UI is responsive; the ack confirms it.
+        self.connection.update_state(settings={**self.state.settings, key: value})
+        # Toggling a parent setting can add or remove its dependent row.
+        self._sync_rows()
+        try:
+            await self.connection.send(setting.msg, bytes([setting.encode(value)]))
+        except Exception as exc:
+            self.status = f"failed to set {setting.label}: {exc}"
+            self._render()
+
     # -- rendering ---------------------------------------------------------
 
     def _render(self) -> None:
@@ -381,6 +411,7 @@ class BudsApp(App):
         level_box.display = self._row_index(ui.ROW_LEVEL) is not None
         level_box.border_title = ui.level_title(self.state)
         self.query_one("#volume").display = self._row_index(ui.ROW_VOLUME) is not None
+        self.query_one("#settings").display = self._row_index(ui.ROW_SETTING) is not None
 
         status_box.display = bool(self.status)
         status_box.update(Text(self.status, style=ui.STYLES["warn"]))
@@ -392,10 +423,13 @@ class BudsApp(App):
             ("#mode", ui.GROUP_MODE),
             ("#level", ui.GROUP_LEVEL),
             ("#volume", ui.GROUP_VOLUME),
+            ("#settings", ui.GROUP_SETTINGS),
         ):
             self.query_one(widget_id).set_active(group == name)
 
-        for widget_id in ("#header", "#battery", "#mode", "#level", "#volume", "#hint"):
+        for widget_id in (
+            "#header", "#battery", "#mode", "#level", "#volume", "#settings", "#hint"
+        ):
             self.query_one(widget_id).refresh(layout=True)
 
     async def action_quit(self) -> None:

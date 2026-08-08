@@ -21,6 +21,7 @@ from .protocol import (
     decode_stream,
 )
 from .sdp import find_rfcomm_channel
+from .settings import BY_MSG, read_all
 
 #: Acknowledgement frame; payload is ``[echoed_msg_id, value]``.
 MSG_ACK = 66
@@ -92,6 +93,8 @@ class BudsState:
     noise_mode: NoiseControlMode = NoiseControlMode.OFF
     ambient_level: int = 0
     anc_level: int = 0
+    #: Values from the settings registry, keyed by ``Setting.key``.
+    settings: dict[str, int] = field(default_factory=dict)
 
     @property
     def battery_earbuds(self) -> int | None:
@@ -331,6 +334,12 @@ class BudsConnection:
             self.state = replace(self.state, ambient_level=value)
         elif echoed_id == MsgId.NOISE_REDUCTION_LEVEL:
             self.state = replace(self.state, anc_level=value)
+        elif echoed_id in BY_MSG:
+            setting = BY_MSG[echoed_id]
+            self.state = replace(
+                self.state,
+                settings={**self.state.settings, setting.key: setting.decode(value)},
+            )
 
     def _apply_status(self, payload: bytes) -> None:
         """Short status frame: revision, batteries, placement, charging bits."""
@@ -363,6 +372,8 @@ class BudsConnection:
             noise_mode=_mode(payload[12]),
             ambient_level=payload[23],
             anc_level=payload[24],
+            # Write-only settings keep whatever the last acknowledgement told us.
+            settings={**self.state.settings, **read_all(payload)},
         )
 
     def update_state(self, **changes) -> None:

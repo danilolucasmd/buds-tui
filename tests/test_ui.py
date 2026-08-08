@@ -36,7 +36,20 @@ def test_level_row_only_appears_for_adjustable_modes():
 
 def test_volume_row_needs_a_sink():
     assert ui.ROW_VOLUME not in [r.kind for r in ui.build_rows(state(), has_sink=False)]
-    assert ui.build_rows(state(), has_sink=True)[-1].kind == ui.ROW_VOLUME
+    assert ui.ROW_VOLUME in [r.kind for r in ui.build_rows(state(), has_sink=True)]
+
+
+def test_settings_rows_come_last():
+    rows = ui.build_rows(state(), has_sink=True)
+    kinds = [r.kind for r in rows]
+    assert kinds[-1] == ui.ROW_SETTING
+    assert kinds.index(ui.ROW_SETTING) > kinds.index(ui.ROW_VOLUME)
+    assert kinds.index(ui.ROW_SETTING) > kinds.index(ui.ROW_MODE)
+
+
+def test_settings_rows_need_a_connection():
+    rows = ui.build_rows(state(connected=False), has_sink=False)
+    assert ui.ROW_SETTING not in [r.kind for r in rows]
 
 
 def test_rows_carry_their_group():
