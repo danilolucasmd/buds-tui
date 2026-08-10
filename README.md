@@ -43,6 +43,8 @@ A terminal UI for managing Samsung Galaxy Buds on Linux. Built and verified agai
 - **Overall volume**, which is the PipeWire/PulseAudio sink for the earbuds (this is what AVRCP mirrors onto the device).
 - **Settings**: conversation detect (and its timeout), noise control with one earbud, sidetone, seamless connection, call path control, pause when a bud is removed, and stereo balance.
 
+The app paints no background of its own — it uses your terminal's default, so themes, transparency and blur show through. Foreground colours are a neutral ramp built around `#dddddd`, defined in one `STYLES` dict in `budstui/ui.py`. Colour is reserved for states worth noticing: a low battery, a disconnected device, a pending action, and mute.
+
 The layout is responsive. Bars and slider tracks grow with the terminal, labels shorten, and below roughly 30 columns the bars drop out entirely rather than wrap — down to about 20 columns everything stays readable.
 
 ## Requirements

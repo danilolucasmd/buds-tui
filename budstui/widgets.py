@@ -48,15 +48,15 @@ class GroupBox(Panel):
 
     DEFAULT_CSS = """
     GroupBox {
-        border: round #1f4a32;
-        border-title-color: #2f6b47;
+        border: round #444444;
+        border-title-color: #6e6e6e;
         padding: 0 1;
         margin-bottom: 1;
         height: auto;
     }
     GroupBox.-active {
-        border: round #4ade80;
-        border-title-color: #4ade80;
+        border: round #dddddd;
+        border-title-color: #dddddd;
         border-title-style: bold;
     }
     """

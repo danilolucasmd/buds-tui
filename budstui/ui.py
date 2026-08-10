@@ -40,17 +40,25 @@ EMPTY = "░"
 TRACK = "─"
 KNOB = "●"
 
+# A neutral ramp built around #dddddd. Structure (options, borders, bars,
+# readouts) stays greyscale; colour is reserved for things that need attention.
+WHITE = "#ffffff"
+BASE = "#dddddd"
+MUTED = "#a0a0a0"
+DIM = "#6e6e6e"
+FAINT = "#444444"
+
 STYLES = {
-    "title": "bold #4ade80",
-    "label": "#7dd3a0",
-    "dim": "#2f6b47",
-    "value": "bold #86efac",
-    "bar": "#4ade80",
+    "label": BASE,
+    "dim": DIM,
+    "value": f"bold {WHITE}",
+    "bar": BASE,
+    "bar_empty": FAINT,
+    "cursor": f"bold {WHITE}",
+    "active": f"bold {WHITE}",
+    "ok": f"bold {BASE}",
+    # Reserved for states worth noticing.
     "bar_low": "bold #f87171",
-    "bar_empty": "#1f4a32",
-    "cursor": "bold #bbf7d0",
-    "active": "bold #4ade80",
-    "ok": "bold #4ade80",
     "busy": "bold #fbbf24",
     "off": "#f87171",
     "warn": "bold #fbbf24",

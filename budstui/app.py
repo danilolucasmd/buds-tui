@@ -28,8 +28,13 @@ VOLUME_STEP = 5
 
 class BudsApp(App):
     CSS = """
+    /* Transparent throughout, so the terminal's own theme (and any
+       background transparency or blur it does) shows through. */
+    App {
+        background: ansi_default;
+    }
     Screen {
-        background: #04120a;
+        background: ansi_default;
         align: center middle;
     }
     #wrap {
@@ -38,7 +43,7 @@ class BudsApp(App):
         height: auto;
         max-height: 100%;
         padding: 1 2;
-        background: #04120a;
+        background: ansi_default;
     }
     #header { margin-bottom: 1; }
     #status { color: #fbbf24; margin-bottom: 1; }
@@ -64,7 +69,9 @@ class BudsApp(App):
     ]
 
     def __init__(self, address: str | None = None) -> None:
-        super().__init__()
+        # ansi_color keeps ansi_default as the terminal's real default
+        # background instead of resolving it to an RGB value.
+        super().__init__(ansi_color=True)
         self._wanted_address = address
         self.connection: BudsConnection | None = None
         self.device: KnownDevice | None = None
