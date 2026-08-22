@@ -51,30 +51,70 @@ The layout is responsive. Bars and slider tracks grow with the terminal, labels 
 
 - Linux with BlueZ, and the earbuds already paired.
 - PipeWire or PulseAudio with `pactl` for the volume slider.
-- A Python built with Bluetooth socket support. Every distribution interpreter has it, so packaged installs are fine. The standalone interpreters `uv` downloads by default do **not**, which is why `pyproject.toml` pins `python-preference = "only-system"` for development.
+- A Python built with Bluetooth socket support. `AF_BLUETOOTH` sockets are a compile-time feature: every distribution interpreter has it, the standalone interpreters `uv` downloads do **not**. That is why the commands below pin the system interpreter, and why `pyproject.toml` sets `python-preference = "only-system"` for development.
 
 ## Installing
 
-Arch Linux and derivatives, from the AUR:
+There is no distribution package yet, so install from a clone. The command you end up with is `buds`.
+
+First the runtime dependencies — BlueZ for the Bluetooth link and `bluetoothctl`, and `pactl` for the volume slider:
+
+| Distribution | Command |
+| --- | --- |
+| Arch, Manjaro, EndeavourOS | `sudo pacman -S --needed bluez bluez-utils libpulse` |
+| Debian, Ubuntu, Mint, Pop!_OS | `sudo apt install bluez pulseaudio-utils` |
+| Fedora, RHEL, Nobara | `sudo dnf install bluez pulseaudio-utils` |
+| openSUSE | `sudo zypper install bluez pulseaudio-utils` |
+
+Then clone:
 
 ```sh
-yay -S buds-tui
+git clone https://github.com/danilolucasmd/buds-tui.git
+cd buds-tui
 ```
 
-The package is `buds-tui`; the command it installs is `buds`.
+The three routes below all do the same thing — put the app in its own virtualenv built on the system interpreter, and drop the `buds` command in `~/.local/bin` — so pick by which tool you already have. Whichever you use, `~/.local/bin` has to be on your `PATH`.
 
-From a checkout, without installing:
+**With pipx** (`python-pipx` on Arch and openSUSE, `pipx` on Debian and Fedora):
+
+```sh
+pipx install .
+```
+
+**With uv:**
+
+```sh
+uv tool install --python /usr/bin/python3 .
+```
+
+The `--python` is not optional here. Without it `uv` builds the tool against a standalone interpreter that has no Bluetooth sockets, and `buds` fails as soon as it tries to reach the earbuds.
+
+**With neither** — a plain virtualenv and a symlink (Debian and Ubuntu need `python3-venv` for this one):
+
+```sh
+python3 -m venv ~/.local/share/buds-tui
+~/.local/share/buds-tui/bin/pip install .
+ln -s ~/.local/share/buds-tui/bin/buds ~/.local/bin/buds
+```
+
+`pip install --user .` is not one of the options: distributions mark their interpreter externally managed (PEP 668) and pip refuses, which is what the virtualenv in each route is for.
+
+To update, `git pull` and run the install again — `pipx install --force .`, `uv tool install --force --python /usr/bin/python3 .`, or the `pip install` line a second time. To remove it: `pipx uninstall buds-tui`, `uv tool uninstall buds-tui`, or delete the virtualenv and the symlink.
+
+From a checkout, without installing at all:
 
 ```sh
 uv run buds
 ```
+
+`packaging/aur/PKGBUILD` is kept current for whenever the package makes it to the AUR.
 
 ## Running
 
 ```sh
 buds                              # the first connected pair
 buds -a AA:BB:CC:DD:EE:FF         # pick a specific pair
-python -m budstui                 # equivalent, without the console script
+python -m budstui                 # equivalent, from a checkout or the virtualenv
 ```
 
 Without `--address` it uses the first paired device that advertises the Galaxy Buds service, preferring one that is already connected.
