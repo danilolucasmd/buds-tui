@@ -44,6 +44,8 @@ class BudsApp(App):
         max-height: 100%;
         padding: 1 2;
         background: ansi_default;
+        scrollbar-size-vertical: 0;
+        scrollbar-size-horizontal: 0;
     }
     #header { margin-bottom: 1; }
     #status { color: #fbbf24; margin-bottom: 1; }
